@@ -1,11 +1,15 @@
 ciuser: ubuntu
-fqdn: lan.pezlab.dev
-dns: ["10.0.0.241", "10.0.0.242"]
+fqdn: dcclab.lan
+dns: ["10.0.0.1"]
 storage:
-  ds1618:
+  local:
     ssd: 0
-  ceph-vm:
+  local-zfs:
     ssd: 1
+  unraid:
+    ssd: 0
+  unraidNFS:
+    ssd: 0
 templates:
   noble_cloud:
     name: ubuntu-24.04-server-cloudimg-amd64
@@ -17,9 +21,10 @@ templates:
     vm_id: 200
 tz: America/Chicago
 nodes:
-  - pve-01
-  - pve-02
-  - pve-03
+  - pve
+  - pve2
+  - pve3
+  - pve4
 users:
   terraform-prov@pve:
     groups: terraform

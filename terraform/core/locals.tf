@@ -12,29 +12,22 @@ locals {
 
 
   # Get our datastores
-  vm_ds = element(data.proxmox_virtual_environment_datastores.lab.datastore_ids,
+  local_zfs_ds = element(data.proxmox_virtual_environment_datastores.lab.datastore_ids,
     index(
       data.proxmox_virtual_environment_datastores.lab.datastore_ids,
-      "ceph-vm"
+      "local-zfs"
     )
   )
-  ds1618_ds = element(data.proxmox_virtual_environment_datastores.lab.datastore_ids,
+  unraidnfs_ds = element(data.proxmox_virtual_environment_datastores.lab.datastore_ids,
     index(
       data.proxmox_virtual_environment_datastores.lab.datastore_ids,
-      "ds1618"
+      "unraidNFS"
     )
   )
-  cephfs_ds = element(data.proxmox_virtual_environment_datastores.lab.datastore_ids,
+  local_ds = element(data.proxmox_virtual_environment_datastores.lab.datastore_ids,
     index(
       data.proxmox_virtual_environment_datastores.lab.datastore_ids,
-      "cephfs"
-    )
-  )
-
-  container_ds = element(data.proxmox_virtual_environment_datastores.lab.datastore_ids,
-    index(
-      data.proxmox_virtual_environment_datastores.lab.datastore_ids,
-      "ceph-ct"
+      "local"
     )
   )
 }

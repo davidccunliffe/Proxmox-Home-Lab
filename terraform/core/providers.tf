@@ -26,7 +26,7 @@ terraform {
 }
 
 provider "proxmox" {
-  endpoint = "https://pve-01.lan.pezlab.dev:8006/"
+  endpoint = "https://pve.dcclab.lan:8006/"
   username = "root@pam"
   password = data.vault_generic_secret.shared.data["root_password"]
   insecure = true

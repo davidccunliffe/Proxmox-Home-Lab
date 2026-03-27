@@ -5,7 +5,7 @@
 resource "proxmox_virtual_environment_file" "user_config" {
   for_each     = local.vms
   content_type = "snippets"
-  datastore_id = try(each.value.cloudinit_storage, "ds1618")
+  datastore_id = try(each.value.cloudinit_storage, "local")
   node_name    = data.proxmox_virtual_environment_datastores.lab.node_name
 
   source_raw {
@@ -33,7 +33,7 @@ users:
 
 resource "proxmox_virtual_environment_file" "vendor_config" {
   content_type = "snippets"
-  datastore_id = local.ds1618_ds
+  datastore_id = local.local_ds
   node_name    = data.proxmox_virtual_environment_datastores.lab.node_name
 
   source_raw {

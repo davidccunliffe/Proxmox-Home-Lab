@@ -71,7 +71,7 @@ resource "proxmox_virtual_environment_vm" "core" {
       ]
     }
 
-    datastore_id      = try(each.value.cloudinit_storage, "ds1618")
+    datastore_id      = try(each.value.cloudinit_storage, "local")
     user_data_file_id = proxmox_virtual_environment_file.user_config[each.key].id
     vendor_data_file_id = proxmox_virtual_environment_file.vendor_config.id
   }
