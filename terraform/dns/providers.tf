@@ -1,7 +1,14 @@
 terraform {
+  required_version = ">= 1.5"
+
   required_providers {
     powerdns = {
-      source = "pan-net/powerdns"
+      source  = "pan-net/powerdns"
+      version = "~> 1.5"
+    }
+    vault = {
+      source  = "hashicorp/vault"
+      version = "~> 4.6"
     }
   }
 }

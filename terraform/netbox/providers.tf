@@ -1,8 +1,14 @@
 terraform {
+  required_version = ">= 1.5"
+
   required_providers {
     netbox = {
       source  = "e-breuninger/netbox"
-      version = "3.2.0"
+      version = "~> 3.9"
+    }
+    vault = {
+      source  = "hashicorp/vault"
+      version = "~> 4.6"
     }
   }
 }

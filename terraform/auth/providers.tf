@@ -1,12 +1,18 @@
 terraform {
+  required_version = ">= 1.5"
+
   required_providers {
     freeipa = {
       source  = "rework-space-com/freeipa"
-      version = "4.0.0"
+      version = "~> 4.1"
     }
     keycloak = {
       source  = "mrparkers/keycloak"
-      version = "4.3.1"
+      version = "~> 4.4"
+    }
+    vault = {
+      source  = "hashicorp/vault"
+      version = "~> 4.6"
     }
   }
 }

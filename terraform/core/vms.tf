@@ -1,83 +1,85 @@
-resource "proxmox_vm_qemu" "core" {
+resource "proxmox_virtual_environment_vm" "core" {
   depends_on = [
     proxmox_virtual_environment_file.user_config,
     proxmox_virtual_environment_file.vendor_config
   ]
-  provider = telmate
+
   for_each = local.vms
 
   name        = each.key
-  desc        = each.value.desc
-  target_node = each.value.pve_node
+  description = each.value.desc
+  node_name   = each.value.pve_node
+  on_boot     = try(each.value.autostart, false)
+  tags        = sort(concat(["terraform"], [for item in each.value.tags : item]))
 
-  # Setting the OS type to cloud-init
-  os_type = "cloud-init"
-  # Set to the name of the cloud-init VM template created earlier
-  clone = local.lab.templates[each.value.template].name
-  # Ensure each VM is cloned in full to avoid
-  # dependency to the original VM template
-  full_clone = true
-  preprovision = false
+  clone {
+    vm_id = local.lab.templates[each.value.template].vm_id
+    full  = true
+  }
 
-  cores   = each.value.cores
-  memory  = each.value.memory
-  cpu     = try(each.value.cpu, "host")
-  vcpus   = try(each.value.vcpus, 0)
-  sockets = try(each.value.sockets, 1)
+  agent {
+    enabled = true
+  }
 
-  # Define a static IP on the primary network interface
-  ipconfig0 = "ip=${each.value.dynamic.networks.primary.ip}/24,gw=${local.networks[each.value.dynamic.networks.primary.net].gateway}"
-  # ipconfig {
-  #   config = "ip=${each.value.dynamic.networks.primary.ip}/24,gw=${local.networks[each.value.dynamic.networks.primary.net].gateway}"
-  # }
-  
-  dynamic "network" {
+  cpu {
+    cores   = each.value.cores
+    sockets = try(each.value.sockets, 1)
+    type    = try(each.value.cpu, "host")
+  }
+
+  memory {
+    dedicated = each.value.memory
+  }
+
+  dynamic "network_device" {
     for_each = each.value.dynamic.networks
 
     content {
-      bridge    = local.networks[network.value.net].bridge
-      firewall  = network.value.firewall
-      link_down = network.value.link_down
-      model     = network.value.model
+      bridge  = local.networks[network_device.value.net].bridge
+      model   = network_device.value.model
+      enabled = !network_device.value.link_down
     }
   }
 
-  ciuser                 = local.lab.ciuser
-  cicustom               = "user=${try(each.value.cloudinit_storage, "ds1618")}:snippets/${each.key}-user-config.yaml,vendor=ds1618:snippets/agent_install-vendor-config.yaml"
-  define_connection_info = true
-  onboot                 = try(each.value.autostart, false)
-
-  # Always include the terraform tag, but extra tags can be provided. We must
-  # sort to ensure subsequnt runs don't make changes
-  tags = join(";", sort(concat(["terraform"], [for item in each.value.tags : item])))
-
-  # Enable the QEMU guest agent
-  agent = 1
-
-
-  scsihw = each.value.scsihw
   dynamic "disk" {
     for_each = can(each.value.dynamic.disks) ? {
       for idx, d in each.value.dynamic.disks : idx => d
     } : {}
+
     content {
-      type    = disk.value.type
-      storage = disk.value.storage
-      size    = disk.value.size
-      format  = disk.value.format
-      #ssd     = local.lab.storage[disk.value.storage].ssd
-      discard = try(disk.value.discard, null)
+      interface    = disk.key
+      size         = parseint(replace(disk.value.size, "G", ""), 10)
+      datastore_id = disk.value.storage
+      file_format  = disk.value.format
+      discard      = try(disk.value.discard, null) == "on" ? "on" : "ignore"
     }
   }
 
+  initialization {
+    ip_config {
+      ipv4 {
+        address = "${each.value.dynamic.networks.primary.ip}/24"
+        gateway = local.networks[each.value.dynamic.networks.primary.net].gateway
+      }
+    }
+
+    user_account {
+      username = local.lab.ciuser
+      keys     = [
+        trimspace(data.vault_generic_secret.terraform.data["pm_public_key"]),
+        trimspace(data.http.github_ssh_keys.response_body)
+      ]
+    }
+
+    datastore_id      = try(each.value.cloudinit_storage, "ds1618")
+    user_data_file_id = proxmox_virtual_environment_file.user_config[each.key].id
+    vendor_data_file_id = proxmox_virtual_environment_file.vendor_config.id
+  }
 
   lifecycle {
     ignore_changes = [
-      target_node,
-      network,
+      node_name,
       clone,
-      full_clone,
-      qemu_os
     ]
   }
 }

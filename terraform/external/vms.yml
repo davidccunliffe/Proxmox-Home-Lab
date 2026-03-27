@@ -3,7 +3,7 @@ kubes:
   memory: 4096
   pve_node: pve-03
   desc: K8s LB
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - ubuntu
@@ -22,7 +22,7 @@ k8s-control-1:
   memory: 4096
   pve_node: pve-03
   desc: K8s Controller
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - ubuntu
@@ -47,7 +47,7 @@ k8s-worker-1:
   memory: 4096
   pve_node: pve-03
   desc: K8s Worker 1
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - ubuntu
@@ -72,8 +72,8 @@ k8s-worker-2:
   cores: 2
   memory: 4096
   pve_node: pve-03
-  desc: K8s Worker 1
-  template: jammy_cloud
+  desc: K8s Worker 2
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - ubuntu
@@ -102,7 +102,7 @@ keycloak:
   tags:
     - keycloak
     - ubuntu
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   dynamic:
     networks:
@@ -117,8 +117,8 @@ vpn:
   cores: 2
   memory: 4096
   pve_node: pve-03
-  desc: wireguard Server
-  template: jammy_cloud
+  desc: WireGuard Server
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - ubuntu
@@ -142,11 +142,11 @@ opa:
   cores: 2
   sockets: 2
   vcpus: 2
-  cpu: cputype=qemu64
+  cpu: host
   memory: 4096
   pve_node: pve-03
   desc: OPA server
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - opa
@@ -168,19 +168,15 @@ opa:
         type: scsi
         format: raw
         discard: "on"
-
 minecraft:
   cores: 2
   sockets: 2
   vcpus: 2
-  cpu: cputype=qemu64
+  cpu: host
   memory: 4096
-vpn:
-  cores: 2
-  memory: 2048
   pve_node: pve-03
   desc: Minecraft server
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - minecraft
@@ -206,11 +202,11 @@ netbox:
   cores: 2
   sockets: 1
   vcpus: 1
-  cpu: cputype=qemu64
+  cpu: host
   memory: 2048
   pve_node: pve-03
-  desc: PowerDNS Server
-  template: jammy_cloud
+  desc: Netbox Server
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - netbox
@@ -225,38 +221,22 @@ netbox:
         firewall: false
         link_down: false
         model: virtio
-minecraft:
-  cores: 2
-  sockets: 2
-  vcpus: 2
-  cpu: cputype=qemu64
-  memory: 4096
-  pve_node: pve-03
-  desc: Minecraft server
-  template: jammy_cloud
-  scsihw: virtio-scsi-pci
-  tags:
-    - minecraft
-    - ubuntu
-  cloudinit_storage: ds1618
-  autostart: true
-  dynamic:
-    networks:
-      primary:
-        net: internal
-        ip: 10.0.0.30
-        firewall: false
-        link_down: false
-        model: virtio
+    disks:
+      scsi0:
+        size: 8G
+        storage: ceph-vm
+        type: scsi
+        format: raw
+        discard: "on"
 pdns-1:
   cores: 2
   sockets: 1
   vcpus: 1
-  cpu: cputype=qemu64
+  cpu: host
   memory: 2048
   pve_node: pve-03
   desc: PowerDNS Server
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - powerdns
@@ -282,11 +262,11 @@ pdns-2:
   cores: 2
   sockets: 1
   vcpus: 1
-  cpu: cputype=qemu64
+  cpu: host
   memory: 2048
   pve_node: pve-03
   desc: PowerDNS Server
-  template: jammy_cloud
+  template: noble_cloud
   scsihw: virtio-scsi-pci
   tags:
     - powerdns
@@ -300,36 +280,6 @@ pdns-2:
         ip: 10.0.0.242
         firewall: false
         link_down: false
-        model: virti
-    disks:
-      scsi0:
-        size: 8G
-        storage: ceph-vm
-        type: scsi
-        format: raw
-        discard: "on"
-netbox:
-  cores: 2
-  sockets: 1
-  vcpus: 1
-  cpu: cputype=qemu64
-  memory: 2048
-  pve_node: pve-03
-  desc: PowerDNS Server
-  template: jammy_cloud
-  scsihw: virtio-scsi-pci
-  tags:
-    - netbox
-    - ubuntu
-  cloudinit_storage: ds1618
-  autostart: true
-  dynamic:
-    networks:
-      primary:
-        net: internal
-        ip: 10.0.0.40
-        firewall: false
-        link_down: false
         model: virtio
     disks:
       scsi0:
@@ -338,42 +288,3 @@ netbox:
         type: scsi
         format: raw
         discard: "on"
-
-#         hey! This isn't working right now... and I'm moving to k8s
-#         ignore starr for now.
-# starr:
-#   cores: 2
-#   sockets: 2
-#   vcpus: 4
-#   cpu: cputype=qemu64
-#   memory: 16384
-#   pve_node: pve-03
-#   desc: PowerDNS Server
-#   template: jammy_cloud
-#   scsihw: virtio-scsi-pci
-#   tags:
-#     - starr
-#     - ubuntu
-#   cloudinit_storage: ceph-vm
-#   autostart: true
-#   dynamic:
-#     networks:
-#       primary:
-#         net: internal
-#         ip: 10.0.0.41
-#         firewall: false
-#         link_down: false
-#         model: virtio
-#       secondary:
-#         net: fibre
-#         ip: 10.30.1.101
-#         firewall: true
-#         link_down: false
-#         model: virtio
-#     disks:
-#       scsi0:
-#         size: 500G
-#         storage: ceph-vm
-#         type: scsi
-#         format: qcow
-#         discard: "on"
