@@ -1,0 +1,54 @@
+---
+# 03-distribute-ca.yml
+#
+# Distributes the Vault Root CA certificate to all managed hosts so they
+# trust certificates issued by the Private CA.
+#
+# Prerequisites:
+#   - Vault PKI initialized (01-vault-init.yml completed)
+#   - root-ca.pem exists in ansible/ directory
+#
+# Usage:
+#   ansible-playbook playbooks/03-distribute-ca.yml
+
+- name: Distribute Root CA certificate to all hosts
+  hosts: vault:dns:k8s
+  gather_facts: true
+
+  vars:
+    ca_cert_src: "{{ playbook_dir }}/../root-ca.pem"
+    ca_cert_dest: /usr/local/share/ca-certificates/lab-root-ca.crt
+
+  tasks:
+    - name: Verify Root CA certificate exists locally
+      ansible.builtin.stat:
+        path: "{{ ca_cert_src }}"
+      delegate_to: localhost
+      become: false
+      register: ca_file
+      run_once: true
+
+    - name: Fail if Root CA not found
+      ansible.builtin.fail:
+        msg: >
+          Root CA certificate not found at {{ ca_cert_src }}.
+          Run 01-vault-init.yml first to generate the CA.
+      when: not ca_file.stat.exists
+      run_once: true
+
+    - name: Copy Root CA certificate
+      ansible.builtin.copy:
+        src: "{{ ca_cert_src }}"
+        dest: "{{ ca_cert_dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: ca_copied
+
+    - name: Update CA certificate store
+      ansible.builtin.command: update-ca-certificates
+      when: ca_copied.changed
+
+    - name: Verify CA is trusted
+      ansible.builtin.command: openssl verify -CAfile {{ ca_cert_dest }} {{ ca_cert_dest }}
+      changed_when: false

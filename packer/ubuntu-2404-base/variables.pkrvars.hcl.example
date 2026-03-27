@@ -1,0 +1,24 @@
+# Example variables file for ubuntu-2404-base Packer template.
+#
+# Copy this file to variables.pkrvars.hcl and adjust values as needed.
+# Credentials default to Vault lookups -- only override here for testing
+# or if you are not using Vault.
+#
+# Usage:
+#   packer build -var-file=variables.pkrvars.hcl ubuntu-2404-base.pkr.hcl
+
+# proxmox_url      = "https://pve.example.com:8006/api2/json"
+# proxmox_username = "packer@pam"
+# proxmox_password = "changeme"
+# ssh_password     = "changeme"
+
+ssh_username      = "lab"
+iso_file          = "unraidNFS:iso/ubuntu-24.04.2-live-server-amd64.iso"
+iso_storage_pool  = "unraidNFS"
+disk_storage_pool = "local-zfs"
+disk_format       = "raw"
+disk_size         = "20G"
+memory            = 2048
+cores             = 2
+network_bridge    = "vmbr0"
+github_user       = "davidccunliffe"

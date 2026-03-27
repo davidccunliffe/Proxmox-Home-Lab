@@ -1,0 +1,54 @@
+---
+# 00-proxmox-bridge.yml
+#
+# Creates vmbr2 bridge on all Proxmox nodes for the internal VM network.
+# This bridge carries the 172.16.0.0/16 network behind the MikroTik firewall.
+#
+# Usage:
+#   ansible-playbook playbooks/00-proxmox-bridge.yml
+#
+# NOTE: This requires a network restart on each node. Run during a maintenance
+# window as it will briefly interrupt VM networking.
+
+- name: Create vmbr2 bridge on Proxmox nodes
+  hosts: proxmox
+  gather_facts: true
+  serial: 1
+
+  vars:
+    bridge_name: vmbr2
+    bridge_comment: "Internal VM network (172.16.0.0/16) - managed by Ansible"
+
+  tasks:
+    - name: Check if vmbr2 already exists
+      ansible.builtin.command: ip link show {{ bridge_name }}
+      register: bridge_check
+      failed_when: false
+      changed_when: false
+
+    - name: Add vmbr2 to /etc/network/interfaces
+      ansible.builtin.blockinfile:
+        path: /etc/network/interfaces
+        marker: "# {mark} ANSIBLE MANAGED - {{ bridge_name }}"
+        block: |
+          auto {{ bridge_name }}
+          iface {{ bridge_name }} inet manual
+                  bridge-stp off
+                  bridge-fd 0
+                  bridge-vlan-aware no
+          #{{ bridge_comment }}
+      when: bridge_check.rc != 0
+      register: interfaces_updated
+
+    - name: Apply network configuration
+      ansible.builtin.command: ifreload -a
+      when: interfaces_updated.changed
+
+    - name: Verify bridge is active
+      ansible.builtin.command: ip link show {{ bridge_name }}
+      register: bridge_verify
+      changed_when: false
+
+    - name: Display bridge status
+      ansible.builtin.debug:
+        msg: "Bridge {{ bridge_name }} state: {{ 'UP' if 'state UP' in bridge_verify.stdout else 'DOWN' }}"

@@ -1,0 +1,165 @@
+---
+# GitLab CI/CD Pipeline for Proxmox Home Lab
+#
+# 3-Stage Bootstrap:
+#   Stage 1 (infra):     Deploy MikroTik, Vault, Bind9 VMs via Terraform
+#   Stage 2 (configure): Initialize Vault, configure DNS, distribute CA certs
+#   Stage 3 (platform):  Deploy Kubernetes cluster, bootstrap with Calico
+#
+# Required CI/CD Variables (Settings > CI/CD > Variables):
+#   PROXMOX_PASSWORD    - Proxmox root@pam password (masked)
+#   PROXMOX_ENDPOINT    - Proxmox API URL (e.g., https://pve.dcclab.lan:8006/)
+#   ANSIBLE_SSH_KEY     - SSH private key for VM access (file type, masked)
+#
+# Terraform state is managed by GitLab's built-in HTTP backend.
+
+stages:
+  - validate
+  - infra
+  - configure
+  - platform
+
+variables:
+  TF_DIR: terraform/environments/lab
+  TF_HTTP_ADDRESS: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/lab"
+  TF_HTTP_LOCK_ADDRESS: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/lab/lock"
+  TF_HTTP_UNLOCK_ADDRESS: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/lab/lock"
+  TF_HTTP_USERNAME: gitlab-ci-token
+  TF_HTTP_PASSWORD: "${CI_JOB_TOKEN}"
+  TF_HTTP_LOCK_METHOD: POST
+  TF_HTTP_UNLOCK_METHOD: DELETE
+  TF_VAR_proxmox_password: "${PROXMOX_PASSWORD}"
+  TF_VAR_proxmox_endpoint: "${PROXMOX_ENDPOINT}"
+  ANSIBLE_HOST_KEY_CHECKING: "False"
+  ANSIBLE_FORCE_COLOR: "true"
+
+# ─── Templates ────────────────────────────────────────────────────────
+
+.terraform_base:
+  tags:
+    - shell
+  before_script:
+    - cd ${TF_DIR}
+    - terraform init -reconfigure
+
+.ansible_base:
+  tags:
+    - shell
+  before_script:
+    - cd ansible
+    - eval $(ssh-agent -s)
+    - echo "${ANSIBLE_SSH_KEY}" | tr -d '\r' | ssh-add -
+    - chmod 600 ${ANSIBLE_SSH_KEY}
+
+# ─── Stage: Validate ─────────────────────────────────────────────────
+
+packer:validate:
+  stage: validate
+  tags:
+    - shell
+  script:
+    - cd packer/ubuntu-2404-base
+    - packer init .
+    - packer validate .
+  rules:
+    - changes:
+        - packer/**/*
+
+terraform:validate:
+  stage: validate
+  extends: .terraform_base
+  script:
+    - terraform validate
+    - terraform fmt -check -recursive ../../
+  rules:
+    - changes:
+        - terraform/**/*
+
+ansible:lint:
+  stage: validate
+  tags:
+    - shell
+  script:
+    - cd ansible
+    - ansible-lint playbooks/ || true
+    - ansible-playbook --syntax-check playbooks/*.yml
+  rules:
+    - changes:
+        - ansible/**/*
+
+# ─── Stage: Infrastructure ───────────────────────────────────────────
+
+terraform:plan:
+  stage: infra
+  extends: .terraform_base
+  script:
+    - terraform plan -out=tfplan
+  artifacts:
+    paths:
+      - ${TF_DIR}/tfplan
+    expire_in: 1 hour
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+
+terraform:apply:
+  stage: infra
+  extends: .terraform_base
+  script:
+    - terraform apply -auto-approve tfplan
+  dependencies:
+    - terraform:plan
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: lab
+
+# ─── Stage: Configure ────────────────────────────────────────────────
+
+vault:init:
+  stage: configure
+  extends: .ansible_base
+  script:
+    - ansible-playbook playbooks/01-vault-init.yml
+  artifacts:
+    paths:
+      - ansible/root-ca.pem
+      - ansible/vault-keys.json
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  needs:
+    - terraform:apply
+
+distribute:ca:
+  stage: configure
+  extends: .ansible_base
+  script:
+    - ansible-playbook playbooks/03-distribute-ca.yml
+  dependencies:
+    - vault:init
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  needs:
+    - vault:init
+
+# ─── Stage: Platform ─────────────────────────────────────────────────
+
+k8s:bootstrap:
+  stage: platform
+  extends: .ansible_base
+  script:
+    - ansible-playbook playbooks/02-k8s-bootstrap.yml
+  artifacts:
+    paths:
+      - ansible/kubeconfig
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  needs:
+    - distribute:ca

@@ -1,0 +1,33 @@
+---
+# Global variables
+domain: lab.davidccunliffe.pro
+github_username: davidccunliffe
+
+# Network
+gateway: 172.16.0.1
+dns_servers:
+  - 172.16.0.20
+  - 172.16.0.21
+
+# Vault
+vault_version: "1.18.3"
+vault_cluster_addr_port: 8201
+vault_api_port: 8200
+vault_nodes:
+  - { name: "vault-1", ip: "172.16.0.10" }
+  - { name: "vault-2", ip: "172.16.0.11" }
+  - { name: "vault-3", ip: "172.16.0.12" }
+
+# Kubernetes
+k8s_version: "1.32"
+k8s_api_endpoint: "k8s-api.{{ domain }}"
+pod_cidr: "10.244.0.0/16"
+service_cidr: "10.96.0.0/12"
+calico_version: "3.29.2"
+
+# PKI / CA
+ca_common_name: "Lab Root CA"
+ca_organization: "DCCLab"
+ca_ttl: "87600h"
+ca_intermediate_ttl: "43800h"
+ca_cert_ttl: "8760h"

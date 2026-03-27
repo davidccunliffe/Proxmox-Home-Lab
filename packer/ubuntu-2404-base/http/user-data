@@ -1,0 +1,35 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  identity:
+    hostname: ubuntu-template
+    username: lab
+    # Password hash generated with: mkpasswd --method=SHA-512
+    # Default: "packer" - override via Vault in production
+    password: "$6$rounds=4096$randomsalt$hashed_password_placeholder"
+  ssh:
+    install-server: true
+    allow-pw: true
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+  network:
+    version: 2
+    ethernets:
+      eth0:
+        dhcp4: true
+  packages:
+    - qemu-guest-agent
+    - cloud-init
+  early-commands:
+    - systemctl stop ssh
+  late-commands:
+    - "curtin in-target -- systemctl enable qemu-guest-agent"
+    - "curtin in-target -- systemctl start qemu-guest-agent"
+  user-data:
+    disable_root: true
+    timezone: UTC

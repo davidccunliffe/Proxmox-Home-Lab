@@ -1,0 +1,300 @@
+---
+# 01-vault-init.yml
+#
+# Initializes the Vault HA cluster and enables the PKI secrets engine
+# for use as a Private Certificate Authority with ACME support.
+#
+# Prerequisites:
+#   - Vault VMs deployed via Terraform
+#   - Vault service running on all 3 nodes (started by cloud-init)
+#
+# Usage:
+#   ansible-playbook playbooks/01-vault-init.yml
+#
+# This playbook:
+#   1. Initializes Vault on the first node (generates unseal keys + root token)
+#   2. Unseals all 3 nodes
+#   3. Enables the PKI secrets engine (Root CA + Intermediate CA)
+#   4. Configures ACME endpoints for automated certificate issuance
+#   5. Saves unseal keys and root token locally (vault-keys.json)
+#
+# IMPORTANT: vault-keys.json contains the master keys. Store securely and
+# delete from the runner after saving to a secure location.
+
+- name: Initialize Vault cluster
+  hosts: vault
+  gather_facts: true
+  any_errors_fatal: true
+
+  vars:
+    vault_addr: "http://{{ ansible_host }}:8200"
+    vault_init_node: "vault-1"
+    vault_keys_file: "{{ playbook_dir }}/../vault-keys.json"
+    vault_key_shares: 5
+    vault_key_threshold: 3
+
+  tasks:
+    #-----------------------------------------------------------------
+    # Step 1: Initialize Vault (only on first node)
+    #-----------------------------------------------------------------
+    - name: Check Vault initialization status
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/init"
+        method: GET
+        status_code: 200
+      register: vault_init_status
+
+    - name: Initialize Vault
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/init"
+        method: PUT
+        body_format: json
+        body:
+          secret_shares: "{{ vault_key_shares }}"
+          secret_threshold: "{{ vault_key_threshold }}"
+        status_code: 200
+      register: vault_init
+      when:
+        - inventory_hostname == vault_init_node
+        - not vault_init_status.json.initialized
+      no_log: true
+
+    - name: Save Vault keys to local file
+      ansible.builtin.copy:
+        content: "{{ vault_init.json | to_nice_json }}"
+        dest: "{{ vault_keys_file }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      when:
+        - inventory_hostname == vault_init_node
+        - vault_init is changed
+      no_log: true
+
+    - name: Load Vault keys
+      ansible.builtin.slurp:
+        src: "{{ vault_keys_file }}"
+      delegate_to: localhost
+      become: false
+      register: vault_keys_raw
+      no_log: true
+
+    - name: Parse Vault keys
+      ansible.builtin.set_fact:
+        vault_keys: "{{ vault_keys_raw.content | b64decode | from_json }}"
+      no_log: true
+
+    #-----------------------------------------------------------------
+    # Step 2: Unseal all Vault nodes
+    #-----------------------------------------------------------------
+    - name: Check seal status
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/seal-status"
+        method: GET
+        status_code: 200
+      register: seal_status
+
+    - name: Unseal Vault nodes
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/unseal"
+        method: PUT
+        body_format: json
+        body:
+          key: "{{ item }}"
+        status_code: 200
+      loop: "{{ vault_keys.keys_base64[:vault_key_threshold] }}"
+      when: seal_status.json.sealed
+      no_log: true
+
+    - name: Wait for Raft leader election
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/health"
+        method: GET
+        status_code: [200, 429, 472, 473]
+      register: health
+      until: health.status == 200 or health.status == 429
+      retries: 30
+      delay: 2
+      when: inventory_hostname == vault_init_node
+
+
+- name: Configure Vault PKI (Private CA)
+  hosts: "{{ groups['vault'][0] }}"
+  gather_facts: false
+
+  vars:
+    vault_addr: "http://{{ ansible_host }}:8200"
+    vault_keys_file: "{{ playbook_dir }}/../vault-keys.json"
+
+  tasks:
+    - name: Load Vault keys
+      ansible.builtin.slurp:
+        src: "{{ vault_keys_file }}"
+      delegate_to: localhost
+      become: false
+      register: vault_keys_raw
+      no_log: true
+
+    - name: Parse root token
+      ansible.builtin.set_fact:
+        vault_token: "{{ (vault_keys_raw.content | b64decode | from_json).root_token }}"
+      no_log: true
+
+    #-----------------------------------------------------------------
+    # Step 3: Enable Root CA PKI
+    #-----------------------------------------------------------------
+    - name: Enable PKI secrets engine (root)
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/mounts/pki"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          type: pki
+          config:
+            max_lease_ttl: "{{ ca_ttl }}"
+        status_code: [200, 204]
+      failed_when: false
+
+    - name: Generate Root CA certificate
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/root/generate/internal"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          common_name: "{{ ca_common_name }}"
+          organization: "{{ ca_organization }}"
+          ttl: "{{ ca_ttl }}"
+          key_type: ec
+          key_bits: 256
+        status_code: 200
+      register: root_ca
+
+    - name: Save Root CA certificate
+      ansible.builtin.copy:
+        content: "{{ root_ca.json.data.certificate }}"
+        dest: "{{ playbook_dir }}/../root-ca.pem"
+        mode: "0644"
+      delegate_to: localhost
+      become: false
+
+    #-----------------------------------------------------------------
+    # Step 4: Enable Intermediate CA PKI
+    #-----------------------------------------------------------------
+    - name: Enable PKI secrets engine (intermediate)
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/mounts/pki_int"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          type: pki
+          config:
+            max_lease_ttl: "{{ ca_intermediate_ttl }}"
+        status_code: [200, 204]
+      failed_when: false
+
+    - name: Generate Intermediate CA CSR
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki_int/intermediate/generate/internal"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          common_name: "{{ ca_organization }} Intermediate CA"
+          organization: "{{ ca_organization }}"
+          key_type: ec
+          key_bits: 256
+        status_code: 200
+      register: intermediate_csr
+
+    - name: Sign Intermediate CA with Root CA
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki/root/sign-intermediate"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          csr: "{{ intermediate_csr.json.data.csr }}"
+          format: pem_bundle
+          ttl: "{{ ca_intermediate_ttl }}"
+        status_code: 200
+      register: signed_intermediate
+
+    - name: Set signed Intermediate CA certificate
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki_int/intermediate/set-signed"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          certificate: "{{ signed_intermediate.json.data.certificate }}"
+        status_code: [200, 204]
+
+    #-----------------------------------------------------------------
+    # Step 5: Configure PKI role and ACME
+    #-----------------------------------------------------------------
+    - name: Create PKI role for lab certificates
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki_int/roles/{{ domain | replace('.', '-') }}"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          allowed_domains:
+            - "{{ domain }}"
+          allow_subdomains: true
+          allow_bare_domains: true
+          max_ttl: "{{ ca_cert_ttl }}"
+          key_type: ec
+          key_bits: 256
+        status_code: [200, 204]
+
+    - name: Configure ACME on intermediate PKI
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki_int/config/cluster"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          path: "http://vault.{{ domain }}:8200/v1/pki_int"
+          aia_path: "http://vault.{{ domain }}:8200/v1/pki_int"
+        status_code: [200, 204]
+
+    - name: Enable ACME on intermediate PKI
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/pki_int/config/acme"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          enabled: true
+          allow_role_ext_key_usage: true
+          default_directory_policy: "role:{{ domain | replace('.', '-') }}"
+        status_code: [200, 204]
+
+    - name: Display PKI summary
+      ansible.builtin.debug:
+        msg: |
+          Vault PKI CA initialized successfully.
+
+          Root CA:      saved to ../root-ca.pem
+          ACME endpoint: http://vault.{{ domain }}:8200/v1/pki_int/acme/directory
+
+          To issue certificates manually:
+            vault write pki_int/issue/{{ domain | replace('.', '-') }} \
+              common_name="myservice.{{ domain }}" ttl="720h"
+
+          To use ACME (e.g., with certbot):
+            certbot certonly --server http://vault.{{ domain }}:8200/v1/pki_int/acme/directory \
+              -d myservice.{{ domain }}
