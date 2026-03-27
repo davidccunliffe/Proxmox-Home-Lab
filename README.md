@@ -55,12 +55,19 @@ Packer, Terraform, and Ansible code to run a three node clustered Proxmox Home L
 
 ## Requirements
 
-* [Proxmox VE 9.x](https://www.proxmox.com/en/)
+### Lab Servers (3x bare metal)
+
+Proxmox VE is a **bare-metal hypervisor** — it installs directly onto your servers as its own OS (based on Debian). You do not install it on top of another operating system. Download the [Proxmox VE 9.x ISO](https://www.proxmox.com/en/downloads) and boot each server from it.
+
+### Workstation (where you run the automation)
+
+You need a machine to execute Packer, Terraform, and Ansible against the Proxmox API. This can be **Linux, macOS, or Windows (via WSL)** — any OS that supports the tools below:
+
 * [Packer](https://www.packer.io/) >= 1.11
 * [Terraform](https://www.terraform.io/) >= 1.5
 * [Ansible](https://www.ansible.com/)
-* [HashiCorp Vault](https://www.vaultproject.io/)
-* [Proxmoxer Python Library](https://pypi.org/project/proxmoxer/)
+* [HashiCorp Vault CLI](https://www.vaultproject.io/)
+* [Python 3](https://www.python.org/) + [Proxmoxer Library](https://pypi.org/project/proxmoxer/)
 
 ### Terraform Providers
 
@@ -75,7 +82,7 @@ Packer, Terraform, and Ansible code to run a three node clustered Proxmox Home L
 
 ## Assumptions
 
-Three node Proxmox VE 9.x cluster installed with shared storage (Ceph + NFS).
+Three node Proxmox VE 9.x cluster installed with shared storage (Ceph + NFS). If you already have Proxmox installed and clustered, skip to the step in the [Order of Operations](#order-of-operations) that matches your current state.
 
 ### Automation and Responsibilities
 
